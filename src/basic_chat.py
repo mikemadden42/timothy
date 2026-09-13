@@ -6,7 +6,10 @@ from dataclasses import dataclass
 
 import ollama
 
-models = ["gemma4:12b", "gpt-oss:20b", "phi4:14b"]
+# small
+models = ["phi4-mini:3.8b", "gemma3:4b"]
+# medium
+# models = ["gemma4:12b", "gpt-oss:20b", "phi4:14b"
 
 NS_PER_S = 1_000_000_000
 NUM_PREDICT = 128
