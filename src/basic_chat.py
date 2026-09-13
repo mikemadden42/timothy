@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 
-import sys
+import argparse
 import time
 from dataclasses import dataclass
 
 import ollama
 
-# small
-models = ["phi4-mini:3.8b", "gemma3:4b"]
-# medium
-# models = ["gemma4:12b", "gpt-oss:20b", "phi4:14b"
+SIZES = {
+    "small": ["phi4-mini:3.8b", "gemma3:4b"],
+    "medium": ["gemma4:12b", "gpt-oss:20b", "phi4:14b"],
+}
+DEFAULT_SIZE = "medium"
+DEFAULT_PROMPT = "Why is the sky blue?"
 
 NS_PER_S = 1_000_000_000
 NUM_PREDICT = 128
@@ -51,7 +53,8 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
             options={"num_predict": NUM_PREDICT},
         )
         wall = time.perf_counter() - start
-    except ollama.ResponseError as err:
+    # ollama wraps an unreachable server in the builtin ConnectionError.
+    except (ollama.ResponseError, ollama.RequestError, ConnectionError) as err:
         print(f"  failed: {err}\n")
         return None
 
@@ -80,11 +83,30 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
     return timing
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Benchmark local Ollama models on the same prompt."
+    )
+    parser.add_argument(
+        "--size",
+        choices=sorted(SIZES),
+        default=DEFAULT_SIZE,
+        help=f"model set to benchmark (default: {DEFAULT_SIZE})",
+    )
+    parser.add_argument(
+        "prompt",
+        nargs="*",
+        help=f"prompt to send (default: {DEFAULT_PROMPT!r})",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
-    prompt = " ".join(sys.argv[1:]) or "Why is the sky blue?"
+    args = parse_args()
+    prompt = " ".join(args.prompt) or DEFAULT_PROMPT
 
     client = ollama.Client()
-    timings = [t for model in models if (t := run(client, model, prompt))]
+    timings = [t for model in SIZES[args.size] if (t := run(client, model, prompt))]
 
     if not timings:
         return
