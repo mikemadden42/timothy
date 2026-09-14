@@ -17,6 +17,14 @@ NS_PER_S = 1_000_000_000
 NUM_PREDICT = 128
 UNLOAD_TIMEOUT_S = 30
 
+# ollama wraps an unreachable server in the builtin ConnectionError.
+OLLAMA_ERRORS = (
+    ollama.ResponseError,
+    ollama.RequestError,
+    ConnectionError,
+    TimeoutError,
+)
+
 
 @dataclass
 class Timing:
@@ -81,13 +89,7 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
             if chunk.done:
                 final = chunk
         wall = time.perf_counter() - start
-    # ollama wraps an unreachable server in the builtin ConnectionError.
-    except (
-        ollama.ResponseError,
-        ollama.RequestError,
-        ConnectionError,
-        TimeoutError,
-    ) as err:
+    except OLLAMA_ERRORS as err:
         print(f"\n  failed: {err}\n")
         return None
 
@@ -142,6 +144,11 @@ def main() -> None:
 
     client = ollama.Client()
     timings = [t for model in SIZES[args.size] if (t := run(client, model, prompt))]
+
+    try:
+        unload_all(client)
+    except OLLAMA_ERRORS as err:
+        print(f"unload failed: {err}\n")
 
     if not timings:
         return
