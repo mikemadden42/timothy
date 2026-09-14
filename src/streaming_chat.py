@@ -15,6 +15,7 @@ DEFAULT_PROMPT = "Why is the sky blue?"
 
 NS_PER_S = 1_000_000_000
 NUM_PREDICT = 128
+UNLOAD_TIMEOUT_S = 30
 
 
 @dataclass
@@ -32,6 +33,19 @@ def ns_to_s(value: int | None) -> float:
     return (value or 0) / NS_PER_S
 
 
+def unload_all(client: ollama.Client) -> None:
+    """Evict every loaded model so the next one has the GPU to itself."""
+    for loaded in client.ps().models:
+        client.generate(model=loaded.model, keep_alive=0)
+
+    # Eviction finishes asynchronously; wait until the VRAM is actually free.
+    deadline = time.monotonic() + UNLOAD_TIMEOUT_S
+    while client.ps().models:
+        if time.monotonic() > deadline:
+            raise TimeoutError("models still loaded after unload request")
+        time.sleep(0.1)
+
+
 def warmup(client: ollama.Client, model: str) -> None:
     """Load the model into memory so the timed call is not charged for it."""
     client.chat(
@@ -45,6 +59,7 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
     print(f"Model: {model}")
 
     try:
+        unload_all(client)
         warmup(client, model)
 
         start = time.perf_counter()
@@ -67,7 +82,12 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
                 final = chunk
         wall = time.perf_counter() - start
     # ollama wraps an unreachable server in the builtin ConnectionError.
-    except (ollama.ResponseError, ollama.RequestError, ConnectionError) as err:
+    except (
+        ollama.ResponseError,
+        ollama.RequestError,
+        ConnectionError,
+        TimeoutError,
+    ) as err:
         print(f"\n  failed: {err}\n")
         return None
 
