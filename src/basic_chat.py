@@ -108,13 +108,15 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
             unload_all(client)
             warmup(client, model)
 
-        start = time.perf_counter()
-        response = client.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            options={"num_predict": NUM_PREDICT},
-        )
-        wall = time.perf_counter() - start
+        # Time inside the spinner so its thread start/join isn't counted.
+        with Spinner("generating"):
+            start = time.perf_counter()
+            response = client.chat(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                options={"num_predict": NUM_PREDICT},
+            )
+            wall = time.perf_counter() - start
     except OLLAMA_ERRORS as err:
         print(f"  failed: {err}\n")
         return None
