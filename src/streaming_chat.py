@@ -12,7 +12,7 @@ import ollama
 
 SIZES = {
     "small": ["phi4-mini:3.8b", "gemma3:4b", "qwen3:4b"],
-    "medium": ["gemma4:12b", "gpt-oss:20b", "phi4:14b"],
+    "medium": ["gemma4:26b", "gpt-oss:20b", "qwen3:30b"],
 }
 DEFAULT_SIZE = "medium"
 DEFAULT_PROMPT = "Why is the sky blue?"
