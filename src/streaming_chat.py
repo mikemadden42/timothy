@@ -48,7 +48,7 @@ def ns_to_s(value: int | None) -> float:
 class Spinner:
     """Animate a status line while a blocking call runs, so it doesn't look hung."""
 
-    FRAMES = "|/-\\"
+    FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
     def __init__(self, message: str) -> None:
         self.message = message
