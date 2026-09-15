@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
+import itertools
+import sys
+import threading
 import time
 from dataclasses import dataclass
+from typing import Self
 
 import ollama
 
@@ -40,6 +44,40 @@ def ns_to_s(value: int | None) -> float:
     return (value or 0) / NS_PER_S
 
 
+class Spinner:
+    """Animate a status line while a blocking call runs, so it doesn't look hung."""
+
+    FRAMES = "|/-\\"
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self) -> Self:
+        # Only animate on a terminal; carriage returns would litter piped output.
+        if sys.stdout.isatty():
+            self._thread = threading.Thread(target=self._spin, daemon=True)
+            self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._thread:
+            self._stop.set()
+            self._thread.join()
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+
+    def _spin(self) -> None:
+        start = time.monotonic()
+        for frame in itertools.cycle(self.FRAMES):
+            elapsed = time.monotonic() - start
+            sys.stdout.write(f"\r  {frame} {self.message} ({elapsed:.0f}s)")
+            sys.stdout.flush()
+            if self._stop.wait(0.1):
+                return
+
+
 def unload_all(client: ollama.Client) -> None:
     """Evict every loaded model so the next one has the GPU to itself."""
     for loaded in client.ps().models:
@@ -66,8 +104,9 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
     print(f"Model: {model}")
 
     try:
-        unload_all(client)
-        warmup(client, model)
+        with Spinner("loading model"):
+            unload_all(client)
+            warmup(client, model)
 
         start = time.perf_counter()
         response = client.chat(
