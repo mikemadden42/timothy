@@ -3,16 +3,18 @@
 Ordered by priority. Items 1 and 5 are quick fixes; do 2 before adding
 bigger features so they only need to be written once.
 
-## 1. Make `small` the default model set
+## 1. Name the model sets by whether they fit in VRAM
 
-`DEFAULT_SIZE` is `"medium"` in both scripts, but none of the medium models
-are installed. A plain run shows the loading spinner for each model and then
-fails with "model not found".
+The `medium` set is now `gemma4:26b`, `gpt-oss:20b`, and `qwen3:30b` — all
+installed, so the default run works. But at 18/13/18 GB they offload to CPU on
+8 GB VRAM, which makes "medium" the wrong label. Meanwhile none of the `small`
+models are installed, so `--size small` fails on every model with
+"model not found".
 
-- [ ] Set `DEFAULT_SIZE = "small"` in `src/basic_chat.py` and `src/streaming_chat.py`
-- [ ] Optional: rename sets by whether they fit in 8 GB VRAM — `small`
-      (fits) and `large` (offloads to CPU: `gemma4:12b`, `phi4:14b`,
-      `gpt-oss:20b`)
+- [ ] Rename the sets by whether they fit in 8 GB VRAM — `small` (fits) and
+      `large` (offloads to CPU: `gemma4:26b`, `gpt-oss:20b`, `qwen3:30b`)
+- [ ] Pull `phi4-mini:3.8b`, `gemma3:4b`, and `qwen3:4b`, or point the small
+      set at models that are actually installed
 
 ## 2. Move shared code into one module
 
