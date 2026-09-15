@@ -11,14 +11,18 @@ from typing import Self
 import ollama
 
 SIZES = {
-    "small": ["phi4-mini:3.8b", "gemma3:4b"],
+    "small": ["phi4-mini:3.8b", "gemma3:4b", "qwen3:4b"],
     "medium": ["gemma4:12b", "gpt-oss:20b", "phi4:14b"],
 }
 DEFAULT_SIZE = "medium"
 DEFAULT_PROMPT = "Why is the sky blue?"
 
 NS_PER_S = 1_000_000_000
-NUM_PREDICT = 128
+NUM_PREDICT = 4096
+# Room for the prompt plus a full NUM_PREDICT response, so long reasoning
+# doesn't overflow the context. Warmup must use the same value, or Ollama
+# reloads the model for the timed call.
+NUM_CTX = 8192
 UNLOAD_TIMEOUT_S = 30
 
 # ollama wraps an unreachable server in the builtin ConnectionError.
@@ -96,7 +100,7 @@ def warmup(client: ollama.Client, model: str) -> None:
     client.chat(
         model=model,
         messages=[{"role": "user", "content": "hi"}],
-        options={"num_predict": 1},
+        options={"num_predict": 1, "num_ctx": NUM_CTX},
     )
 
 
@@ -114,7 +118,7 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
             response = client.chat(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                options={"num_predict": NUM_PREDICT},
+                options={"num_predict": NUM_PREDICT, "num_ctx": NUM_CTX},
             )
             wall = time.perf_counter() - start
     except OLLAMA_ERRORS as err:

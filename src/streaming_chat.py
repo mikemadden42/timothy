@@ -11,14 +11,18 @@ from typing import Self
 import ollama
 
 SIZES = {
-    "small": ["phi4-mini:3.8b", "gemma3:4b"],
+    "small": ["phi4-mini:3.8b", "gemma3:4b", "qwen3:4b"],
     "medium": ["gemma4:12b", "gpt-oss:20b", "phi4:14b"],
 }
 DEFAULT_SIZE = "medium"
 DEFAULT_PROMPT = "Why is the sky blue?"
 
 NS_PER_S = 1_000_000_000
-NUM_PREDICT = 128
+NUM_PREDICT = 4096
+# Room for the prompt plus a full NUM_PREDICT response, so long reasoning
+# doesn't overflow the context. Warmup must use the same value, or Ollama
+# reloads the model for the timed call.
+NUM_CTX = 8192
 UNLOAD_TIMEOUT_S = 30
 
 # ollama wraps an unreachable server in the builtin ConnectionError.
@@ -35,6 +39,8 @@ class Timing:
     model: str
     wall: float
     ttft: float
+    # None when the model spent its whole budget thinking and never answered.
+    tta: float | None
     load: float
     eval_tokens: int
     eval_rate: float
@@ -43,6 +49,10 @@ class Timing:
 
 def ns_to_s(value: int | None) -> float:
     return (value or 0) / NS_PER_S
+
+
+def fmt_seconds(value: float | None) -> str:
+    return "-" if value is None else f"{value:.2f}s"
 
 
 class Spinner:
@@ -97,7 +107,7 @@ def warmup(client: ollama.Client, model: str) -> None:
     client.chat(
         model=model,
         messages=[{"role": "user", "content": "hi"}],
-        options={"num_predict": 1},
+        options={"num_predict": 1, "num_ctx": NUM_CTX},
     )
 
 
@@ -111,20 +121,32 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
 
         start = time.perf_counter()
         ttft = None
+        tta = None
+        thought = False
         final = None
         for chunk in client.chat(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            options={"num_predict": NUM_PREDICT},
+            options={"num_predict": NUM_PREDICT, "num_ctx": NUM_CTX},
             stream=True,
         ):
+            elapsed = time.perf_counter() - start
             # Reasoning models stream `thinking` before (or instead of)
-            # `content`; either counts as the first token.
-            text = chunk.message.content or chunk.message.thinking or ""
-            if text:
-                if ttft is None:
-                    ttft = time.perf_counter() - start
-                print(text, end="", flush=True)
+            # `content`. Either counts as the first token, but only
+            # `content` counts as the start of the answer.
+            thinking = chunk.message.thinking or ""
+            content = chunk.message.content or ""
+            if ttft is None and (thinking or content):
+                ttft = elapsed
+            if thinking:
+                thought = True
+                print(thinking, end="", flush=True)
+            if content:
+                if tta is None:
+                    tta = elapsed
+                    if thought:
+                        print("\n\n--- answer ---\n", flush=True)
+                print(content, end="", flush=True)
             if chunk.done:
                 final = chunk
         wall = time.perf_counter() - start
@@ -142,6 +164,7 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
         model=model,
         wall=wall,
         ttft=ttft if ttft is not None else wall,
+        tta=tta,
         load=ns_to_s(final.load_duration),
         eval_tokens=eval_tokens,
         eval_rate=eval_tokens / eval_seconds if eval_seconds else 0.0,
@@ -151,6 +174,7 @@ def run(client: ollama.Client, model: str, prompt: str) -> Timing | None:
     print(
         f"\n\n  {timing.wall:.2f}s wall "
         f"({timing.ttft:.2f}s to first token, "
+        f"{f'{timing.tta:.2f}s to answer' if timing.tta is not None else 'no answer'}, "
         f"{timing.load:.2f}s load, "
         f"{timing.eval_tokens} tokens"
         f"{' capped' if timing.truncated else ''}, "
@@ -192,11 +216,14 @@ def main() -> None:
     if not timings:
         return
 
-    print(f"{'model':<16}{'wall':>9}{'ttft':>9}{'load':>9}{'tokens':>9}{'tok/s':>9}")
+    print(
+        f"{'model':<16}{'wall':>9}{'ttft':>9}{'tta':>9}"
+        f"{'load':>9}{'tokens':>9}{'tok/s':>9}"
+    )
     for t in sorted(timings, key=lambda t: t.eval_rate, reverse=True):
         print(
-            f"{t.model:<16}{t.wall:>8.2f}s{t.ttft:>8.2f}s{t.load:>8.2f}s"
-            f"{t.eval_tokens:>9}{t.eval_rate:>9.1f}"
+            f"{t.model:<16}{t.wall:>8.2f}s{t.ttft:>8.2f}s{fmt_seconds(t.tta):>9}"
+            f"{t.load:>8.2f}s{t.eval_tokens:>9}{t.eval_rate:>9.1f}"
         )
 
 
