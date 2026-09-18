@@ -2,6 +2,7 @@
 
 import argparse
 import itertools
+import readline  # noqa: F401  (enables line editing in input(); saves no history file)
 import sys
 import threading
 import time
@@ -193,17 +194,23 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_SIZE,
         help=f"model set to benchmark (default: {DEFAULT_SIZE})",
     )
-    parser.add_argument(
-        "prompt",
-        nargs="*",
-        help=f"prompt to send (default: {DEFAULT_PROMPT!r})",
-    )
     return parser.parse_args()
+
+
+def ask_prompt() -> str:
+    """Read the question interactively so it never lands in shell history."""
+    try:
+        text = input(f"Question [{DEFAULT_PROMPT}]: ").strip()
+    except EOFError, KeyboardInterrupt:
+        print()
+        sys.exit(1)
+    print()
+    return text or DEFAULT_PROMPT
 
 
 def main() -> None:
     args = parse_args()
-    prompt = " ".join(args.prompt) or DEFAULT_PROMPT
+    prompt = ask_prompt()
 
     client = ollama.Client()
     timings = [t for model in SIZES[args.size] if (t := run(client, model, prompt))]
