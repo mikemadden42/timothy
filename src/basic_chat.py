@@ -12,7 +12,7 @@ from typing import Self
 import ollama
 
 SIZES = {
-    "small": ["phi4-mini:3.8b", "gemma3:4b", "qwen3:4b"],
+    "small": ["phi4-mini:3.8b", "gemma3:4b", "nemotron-3-nano:4b", "qwen3:4b"],
     "medium": ["gemma4:26b", "gpt-oss:20b", "qwen3:30b"],
 }
 DEFAULT_SIZE = "medium"
@@ -190,10 +190,12 @@ def main() -> None:
     if not timings:
         return
 
-    print(f"{'model':<16}{'wall':>9}{'load':>9}{'tokens':>9}{'tok/s':>9}")
+    # Size the name column to the longest model, keeping a two-space gap.
+    width = max(len("model"), *(len(t.model) for t in timings)) + 2
+    print(f"{'model':<{width}}{'wall':>9}{'load':>9}{'tokens':>9}{'tok/s':>9}")
     for t in sorted(timings, key=lambda t: t.eval_rate, reverse=True):
         print(
-            f"{t.model:<16}{t.wall:>8.2f}s{t.load:>8.2f}s"
+            f"{t.model:<{width}}{t.wall:>8.2f}s{t.load:>8.2f}s"
             f"{t.eval_tokens:>9}{t.eval_rate:>9.1f}"
         )
 
