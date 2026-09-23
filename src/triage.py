@@ -324,8 +324,11 @@ def triage(
         # at the one that dominates rather than the first it happens to read.
         listed = "\n".join(f"{n}x {line}" for n, line in frequent)
         content += f"\n\nThe most repeated failure lines are:\n{listed}"
-    if not INTERESTING.search(log):
-        # Without this, models dress up routine startup chatter as a problem.
+    if not frequent:
+        # Keyed off the counted failures, not the looser keyword search: a dpkg
+        # log full of "libgpg-error-dev" has the keyword everywhere and no
+        # failure anywhere. Without this, models dress up routine lines as
+        # problems.
         content += (
             "\n\nNo line here matches any common error keyword, so this log is "
             "almost certainly routine. Reply with the No errors found form "
