@@ -330,9 +330,10 @@ def triage(
         # failure anywhere. Without this, models dress up routine lines as
         # problems.
         content += (
-            "\n\nNo line here matches any common error keyword, so this log is "
-            "almost certainly routine. Reply with the No errors found form "
-            "unless you can point at an actual failure."
+            "\n\nNothing in this log was counted as a failure, so it is almost "
+            "certainly routine. Use the No errors found form unless you can "
+            "point at an actual failure. Quote Evidence from the log itself, "
+            "never from these instructions."
         )
     if note:
         content += f"\n\nWhat I already know: {note}"
