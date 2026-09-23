@@ -302,6 +302,10 @@ def pick_model(client: ollama.Client, requested: str | None) -> str:
 RUN_ON = re.compile(r" (?=(?:Cause|Evidence|Next):)")
 LABELS = ("Summary", "Cause", "Evidence", "Next")
 NO_ERRORS = re.compile(r"no errors? (?:found|detected)", re.IGNORECASE)
+# Anchored to the start of a line: a model that narrates its reasoning mentions
+# "Cause:" mid-sentence without ever producing the four-line answer.
+SUMMARY_LINE = re.compile(r"^Summary:[ \t]*(.*)$", re.MULTILINE)
+PREFILL = "Summary:"
 
 
 def end_of_answer(text: str) -> int | None:
@@ -356,6 +360,10 @@ def triage(
         messages=[
             {"role": "system", "content": SYSTEM},
             {"role": "user", "content": content},
+            # Put the first label in the model's mouth. A model that would
+            # otherwise narrate its reasoning has to continue an answer that
+            # has already started, and every model answers faster for it.
+            {"role": "assistant", "content": PREFILL},
         ],
         options={"num_predict": NUM_PREDICT, "num_ctx": NUM_CTX},
         # Left to each model's own default: thinking helps the bigger models,
@@ -367,7 +375,7 @@ def triage(
     # Header on stderr so `triage.py log | pbcopy` still copies just the answer.
     print(f"[{model}]", file=sys.stderr)
 
-    buf = ""
+    buf = PREFILL
     shown = 0
     done = truncated = timed_out = False
     deadline = time.monotonic() + timeout
@@ -385,6 +393,12 @@ def triage(
 
             # Chattier models keep talking past the four lines; print up to the
             # end of the Next: line and stop reading there.
+            # A model that repeats the prefill would otherwise give us
+            # "Summary:Summary: ...".
+            if buf == PREFILL:
+                text = text.lstrip()
+                text = text.removeprefix(PREFILL)
+                text = " " + text.lstrip()
             buf = RUN_ON.sub("\n", buf + text)
             end = end_of_answer(buf)
             visible = buf if end is None else buf[:end]
@@ -414,14 +428,19 @@ def triage(
         for n, line in frequent:
             print(f"  {n:>4}x {SYSLOG_PREFIX.sub('', line)[:140]}", file=sys.stderr)
 
-    if frequent and NO_ERRORS.search(buf):
+    # Judge the Summary line itself, not the whole reply: a model quoting these
+    # instructions back would otherwise trip the no-errors check.
+    summary = SUMMARY_LINE.search(buf)
+    if frequent and summary and NO_ERRORS.search(summary.group(1)):
         print(
             f"[{model} said no errors found, but {len(frequent)} repeated "
             "failure lines were counted above]",
             file=sys.stderr,
         )
 
-    missing = [label for label in LABELS if f"{label}:" not in buf]
+    missing = [
+        label for label in LABELS if not re.search(rf"^{label}:", buf, re.MULTILINE)
+    ]
     if missing:
         print(
             f"[{model} ignored the format: no {', '.join(missing)} line]",
