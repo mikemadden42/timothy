@@ -52,6 +52,24 @@ INTERESTING = re.compile(
     r"|corrupt|no such file)\b",
     re.IGNORECASE,
 )
+# Lines that name an actual failure, for the counted summary: a failure label
+# ("error:", "panic:") or a failure verb.
+FAILURE = re.compile(
+    r"(?:^|[\s\])])(?:error(?:\[[A-Za-z0-9]+\])?|fatal error|panic|segfault)\s*:"
+    r"|\b(?:failed|failure|denied|refused|timed out|not found|no such file)\b",
+    re.IGNORECASE,
+)
+# Warnings and the source snippets a compiler prints under an error would
+# otherwise dominate the counts.
+NOISE = re.compile(
+    r"^\s*warning\b|\bwarning[:=]|^\s*\|\s|^\s*\d+\s*\||^\s*-->", re.IGNORECASE
+)
+# rustc hides the real reason in a "= note:" line, e.g.
+#   = note: clang: error: invalid linker name in argument '-fuse-ld=mold'
+# so keep a note that carries its own error label.
+NOTE = re.compile(r"^\s*=\s")
+LABELLED = re.compile(r"\b(?:error|fatal error|panic|segfault)\s*:", re.IGNORECASE)
+TOP_ERRORS = 3
 CONTEXT_LINES = 1
 TAIL_LINES = 20
 # A system log repeats the same message with a new timestamp all day; a handful
@@ -236,6 +254,26 @@ def select(log: str) -> str:
     return "\n".join(out)
 
 
+def top_errors(log: str) -> list[tuple[int, str]]:
+    """The most repeated failure lines, counted by shape.
+
+    A build log often holds several independent failures. Counting them is
+    something Python can do exactly, instead of leaving the model to pick one
+    and the reader to wonder what else was in there.
+    """
+    counts: Counter[str] = Counter()
+    examples: dict[str, str] = {}
+    for line in log.splitlines():
+        if not FAILURE.search(line) or NOISE.search(line):
+            continue
+        if NOTE.search(line) and not LABELLED.search(line):
+            continue
+        shape = NUMBERS.sub("#", line).strip()
+        counts[shape] += 1
+        examples.setdefault(shape, line.strip())
+    return [(n, examples[shape]) for shape, n in counts.most_common(TOP_ERRORS)]
+
+
 def pick_model(client: ollama.Client, requested: str | None) -> str:
     installed = [m.model for m in client.list().models]
     if requested:
@@ -274,8 +312,14 @@ def triage(
     note: str | None,
     think: bool | None,
     timeout: float,
+    frequent: list[tuple[int, str]],
 ) -> None:
     content = f"Log:\n```\n{log}\n```"
+    if frequent:
+        # Several independent failures is normal in a build log; point the model
+        # at the one that dominates rather than the first it happens to read.
+        listed = "\n".join(f"{n}x {line}" for n, line in frequent)
+        content += f"\n\nThe most repeated failure lines are:\n{listed}"
     if not INTERESTING.search(log):
         # Without this, models dress up routine startup chatter as a problem.
         content += (
@@ -353,6 +397,12 @@ def triage(
     elif truncated and not done:
         print(f"\n[cut off at {NUM_PREDICT} tokens]")
 
+    # Counted, not guessed: the model picks one failure, this shows the rest.
+    if len(frequent) > 1:
+        print("\nrepeated failures:", file=sys.stderr)
+        for n, line in frequent:
+            print(f"  {n:>4}x {line[:100]}", file=sys.stderr)
+
     missing = [label for label in LABELS if f"{label}:" not in buf]
     if missing:
         print(
@@ -397,14 +447,17 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    log = select(clean(read_log(args.path)))
-    if not log:
+    cleaned = clean(read_log(args.path))
+    if not cleaned:
         sys.exit("triage: the log is empty")
+    # Count over the whole log, not the trimmed selection sent to the model.
+    frequent = top_errors(cleaned)
+    log = select(cleaned)
 
     client = ollama.Client()
     try:
         model = pick_model(client, args.model)
-        triage(client, model, log, args.note, args.think, args.timeout)
+        triage(client, model, log, args.note, args.think, args.timeout, frequent)
     except OLLAMA_ERRORS as err:
         sys.exit(f"triage: {err}")
     except KeyboardInterrupt:

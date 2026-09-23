@@ -120,8 +120,19 @@ Next: Check if libssl is installed and in the linker path using `ldconfig -v | g
   that is 125 error lines instead of the 10 a plain head/tail slice caught.
 - Reading stops at the end of the `Next:` line, so a chatty model can't run on
   past the answer (this took `qwen3:4b` from 75s to 9s).
-- The model name goes to stderr, so `triage.py build.log | pbcopy` copies only
-  the answer.
+- The most repeated failure lines are counted in Python, shown after the answer
+  and handed to the model as a hint. A build log often holds several unrelated
+  failures, and the four-line format can only name one:
+
+  ```
+  repeated failures:
+      12x error: linking with `clang` failed: exit status: 1
+       2x error: failed to run custom build command for `onig_sys v69.8.1`
+       2x error: failed to run custom build command for `openssl-sys v0.9.61`
+  ```
+
+- The model name and the counts go to stderr, so `triage.py build.log | pbcopy`
+  copies only the answer.
 - `--timeout` (default 120s) gives up on a model that is still thinking. An
   offloaded model generating at 4 tok/s would otherwise take 15+ minutes to
   spend its token budget.
