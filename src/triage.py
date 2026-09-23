@@ -297,6 +297,7 @@ def pick_model(client: ollama.Client, requested: str | None) -> str:
 # a newline keeps the text the same length, so streaming offsets still line up.
 RUN_ON = re.compile(r" (?=(?:Cause|Evidence|Next):)")
 LABELS = ("Summary", "Cause", "Evidence", "Next")
+NO_ERRORS = re.compile(r"no errors? (?:found|detected)", re.IGNORECASE)
 
 
 def end_of_answer(text: str) -> int | None:
@@ -407,6 +408,13 @@ def triage(
         print("\nrepeated failures:", file=sys.stderr)
         for n, line in frequent:
             print(f"  {n:>4}x {SYSLOG_PREFIX.sub('', line)[:140]}", file=sys.stderr)
+
+    if frequent and NO_ERRORS.search(buf):
+        print(
+            f"[{model} said no errors found, but {len(frequent)} repeated "
+            "failure lines were counted above]",
+            file=sys.stderr,
+        )
 
     missing = [label for label in LABELS if f"{label}:" not in buf]
     if missing:
