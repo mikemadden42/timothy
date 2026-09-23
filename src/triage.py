@@ -56,7 +56,11 @@ INTERESTING = re.compile(
 # ("error:", "panic:") or a failure verb.
 FAILURE = re.compile(
     r"(?:^|[\s\])])(?:error(?:\[[A-Za-z0-9]+\])?|fatal error|panic|segfault)\s*:"
-    r"|\b(?:failed|failure|denied|refused|timed out|not found|no such file)\b",
+    r"|\b(?:failed|failure|denied|refused|timed out|not found|no such file)\b"
+    # Python and friends: "JSONDecodeError: Expecting value", "Traceback ...".
+    # The colon is what keeps package names like libgpg-error-dev out.
+    r"|\b[A-Za-z_]*(?:Error|Exception)\s*:"
+    r"|^Traceback \(most recent call last\)",
     re.IGNORECASE,
 )
 # Warnings and the source snippets a compiler prints under an error would
@@ -317,7 +321,8 @@ def triage(
     think: bool | None,
     timeout: float,
     frequent: list[tuple[int, str]],
-) -> None:
+) -> str | None:
+    """Print the answer; return why there wasn't one, or None if there was."""
     content = f"Log:\n```\n{log}\n```"
     if frequent:
         # Several independent failures is normal in a build log; point the model
@@ -391,14 +396,10 @@ def triage(
     print()
 
     if not shown:
-        reason = (
-            f"is still thinking after {timeout:.0f}s"
+        return (
+            f"was still thinking after {timeout:.0f}s"
             if timed_out
-            else (f"thought for {NUM_PREDICT} tokens without answering")
-        )
-        sys.exit(
-            f"triage: {model} {reason}; "
-            "retry with --no-think, a smaller --model, or a longer --timeout"
+            else f"thought for {NUM_PREDICT} tokens without answering"
         )
     if timed_out:
         print(f"\n[stopped after {timeout:.0f}s; raise --timeout for the rest]")
@@ -426,6 +427,7 @@ def triage(
             f"[{model} ignored the format: no {', '.join(missing)} line]",
             file=sys.stderr,
         )
+    return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -474,7 +476,24 @@ def main() -> None:
     client = ollama.Client()
     try:
         model = pick_model(client, args.model)
-        triage(client, model, log, args.note, args.think, args.timeout, frequent)
+        failure = triage(
+            client, model, log, args.note, args.think, args.timeout, frequent
+        )
+        # A reasoning model can spend its whole budget thinking and answer
+        # nothing (qwen3:4b does this reliably). Thinking off, it answers.
+        if failure and args.think is not False:
+            print(
+                f"triage: {model} {failure}; retrying with thinking off",
+                file=sys.stderr,
+            )
+            failure = triage(
+                client, model, log, args.note, False, args.timeout, frequent
+            )
+        if failure:
+            sys.exit(
+                f"triage: {model} {failure}; "
+                "retry with a different --model or a longer --timeout"
+            )
     except OLLAMA_ERRORS as err:
         sys.exit(f"triage: {err}")
     except KeyboardInterrupt:
