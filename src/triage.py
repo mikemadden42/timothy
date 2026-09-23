@@ -22,8 +22,8 @@ import ollama
 # left to think it burns the whole token budget without answering, and with
 # --no-think it narrates its reasoning instead of following the format.
 MODEL_PREFERENCE = [
-    "gpt-oss:20b",
     "gemma4:26b",
+    "gpt-oss:20b",
     "qwen3:30b",
     # gemma3 over phi4-mini: it was the steadier of the two on real logs,
     # including saying "no errors" when there were none.
