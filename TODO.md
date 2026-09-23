@@ -3,24 +3,25 @@
 Ordered by priority. Items 1 and 5 are quick fixes; do 2 before adding
 bigger features so they only need to be written once.
 
-## 1. Name the model sets by whether they fit in VRAM
+## 1. Fix the default model set
 
-The `medium` set is now `gemma4:26b`, `gpt-oss:20b`, and `qwen3:30b` — all
-installed, so the default run works. But at 18/13/18 GB they offload to CPU on
-8 GB VRAM, which makes "medium" the wrong label. Meanwhile none of the `small`
-models are installed, so `--size small` fails on every model with
-"model not found".
+`DEFAULT_SIZE` is `medium`, and none of `gemma4:26b`, `gpt-oss:20b`, or
+`qwen3:30b` are installed on this machine, so a plain run fails on every model
+with "model not found". The whole `small` set is installed and runs fine.
 
-- [ ] Rename the sets by whether they fit in 8 GB VRAM — `small` (fits) and
-      `large` (offloads to CPU: `gemma4:26b`, `gpt-oss:20b`, `qwen3:30b`)
-- [ ] Pull `phi4-mini:3.8b`, `gemma3:4b`, and `qwen3:4b`, or point the small
-      set at models that are actually installed
+On the 8 GB laptop those medium models also offload to CPU (18/13/18 GB), which
+makes "medium" the wrong label; on the 36 GB MacBook they fit.
+
+- [ ] Point the default at a set that is actually installed
+- [ ] Rename the sets by whether they fit in VRAM — `small` (fits) and `large`
+      (offloads to CPU), or pull the medium models
 
 ## 2. Move shared code into one module
 
-About 100 lines are duplicated between the scripts: `SIZES`, the constants,
-`OLLAMA_ERRORS`, `Spinner`, `unload_all`, `warmup`, and `parse_args`. They
-have already drifted twice (the token limit and the `qwen3:4b` entry).
+Now duplicated across three scripts: `Spinner`, `OLLAMA_ERRORS`, and in the two
+benchmarks also `SIZES`, the constants, `unload_all`, `warmup`, `ask_prompt`,
+and `parse_args`. They have already drifted twice (the token limit and the
+`qwen3:4b` entry), and `triage.py` carries a third copy of `Spinner`.
 
 - [ ] Create a shared module (e.g. `src/bench.py`)
 - [ ] Leave each script with only its own `run()` and results table
@@ -52,7 +53,18 @@ for Ollama's 5-minute keep-alive.
 
 ## 7. Project housekeeping
 
-- [ ] Fill in `README.md` (currently empty)
+- [x] Fill in `README.md`
 - [ ] Fix the `timothy` script in `pyproject.toml`: it points at the
       placeholder `src/timothy/__init__.py`, which only prints
-      "Hello from timothy!" — wire it to the benchmarks or remove it
+      "Hello from timothy!" — wire it to the scripts or remove it
+
+## 8. Triage follow-ups
+
+`src/triage.py` works (see the README), but the small models vary a lot on the
+same log. Two things would make that measurable instead of anecdotal:
+
+- [ ] Keep a few saved logs with known answers (the mold linker failure, the
+      sssd socket failures, a log with no errors) and score models against them
+- [ ] Consider dropping `nemotron-3-nano:4b` from `MODEL_PREFERENCE`: it
+      repeatedly ignores the four-line format and answers chat transcripts
+      found inside logs
