@@ -68,6 +68,9 @@ NOISE = re.compile(
 #   = note: clang: error: invalid linker name in argument '-fuse-ld=mold'
 # so keep a note that carries its own error label.
 NOTE = re.compile(r"^\s*=\s")
+# "2026-09-20T08:54:56.408730-05:00 tony gnome-shell[8746]: " — 55 characters of
+# timestamp and host before the message, worth dropping when showing counts.
+SYSLOG_PREFIX = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.+-]+\s+\S+\s+")
 LABELLED = re.compile(r"\b(?:error|fatal error|panic|segfault)\s*:", re.IGNORECASE)
 TOP_ERRORS = 3
 CONTEXT_LINES = 1
@@ -398,10 +401,12 @@ def triage(
         print(f"\n[cut off at {NUM_PREDICT} tokens]")
 
     # Counted, not guessed: the model picks one failure, this shows the rest.
-    if len(frequent) > 1:
+    # Shown whenever the model was given the hint, so its answer can be checked
+    # against the same lines.
+    if frequent:
         print("\nrepeated failures:", file=sys.stderr)
         for n, line in frequent:
-            print(f"  {n:>4}x {line[:100]}", file=sys.stderr)
+            print(f"  {n:>4}x {SYSLOG_PREFIX.sub('', line)[:140]}", file=sys.stderr)
 
     missing = [label for label in LABELS if f"{label}:" not in buf]
     if missing:
