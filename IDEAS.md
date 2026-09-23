@@ -34,7 +34,7 @@ forgotten.
 
 - Cap it at three notes or "looks fine" so it stays a 10-second habit
 
-### 4. Error and log triage
+### 4. Error and log triage — built, see `src/triage.py`
 
 Pipe a stack trace, failing test log, or `journalctl -p err -b` in; get a summary
 with the likely cause.
