@@ -78,6 +78,14 @@ PREAMBLE = re.compile(
     re.IGNORECASE,
 )
 FENCE = re.compile(r"^\s*```[^\n]*\n(.*?)\n?```\s*$", re.DOTALL)
+# Some models echo the --- delimiters the text is wrapped in.
+RULE = re.compile(r"^\s*-{3,}\s*\n|\n\s*-{3,}\s*$")
+# No assistant prefill here, unlike triage.py. Anchoring the reply with
+# "Rewritten text:\n" does fix qwen3:4b in isolation (nothing -> a rewrite in
+# 8s), but inside the tool it made things worse: qwen3 leaked a literal
+# </think> and repeated its answer twice, and nemotron went from 90 words to
+# 127 and needed the thinking-off retry. Triage can anchor on "Summary:"
+# because the answer has a fixed shape; a rewrite has none.
 
 
 def tidy(text: str) -> str:
@@ -86,6 +94,7 @@ def tidy(text: str) -> str:
     text = PREAMBLE.sub("", text)
     if fenced := FENCE.match(text):
         text = fenced.group(1)
+    text = RULE.sub("", text.strip())
     return text.strip()
 
 
