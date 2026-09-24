@@ -60,11 +60,32 @@ for Ollama's 5-minute keep-alive.
 
 ## 8. Triage follow-ups
 
-`src/triage.py` works (see the README), but the small models vary a lot on the
-same log. Two things would make that measurable instead of anecdotal:
+Model choice is now measured rather than guessed. Two corpora with checkable
+answers, scored by whether the reply claims a failure:
 
-- [ ] Keep a few saved logs with known answers (the mold linker failure, the
-      sssd socket failures, a log with no errors) and score models against them
-- [ ] Consider dropping `nemotron-3-nano:4b` from `MODEL_PREFERENCE`: it
-      repeatedly ignores the four-line format and answers chat transcripts
-      found inside logs
+- `~/rust2/logs/*.log` — 67 cargo builds, 10 broken (ground truth: a line
+  starting with `error`)
+- `~/etc/*.log` — 39 command logs, 1 broken (`update-src.log`, a git pull
+  refused over unstaged changes)
+
+318 runs over both, after the `Summary:` prefill landed:
+
+| model | accuracy | avg | worst mistake |
+| --- | --- | --- | --- |
+| `qwen3:4b` | 99% (105/106) | 5.6s | missed `update-src`, but the counted-failures warning fired |
+| `phi4-mini:3.8b` | 97% (103/106) | 5.8s | true false negative on `logs.log` (`could not find Cargo.toml`) |
+| `gemma3:4b` | 96% (102/106) | 6.2s | invented "Service failed to respond to heartbeat" from a file of RPM package names |
+
+- [x] Score models against saved logs with known answers
+- [x] Demote `nemotron-3-nano:4b` (3 outright failures in 17 `/var/log` runs,
+      plus a fabricated finding on `gpu-manager.log`)
+- [ ] Commit the two corpora, or a trimmed copy, so the scores can be
+      reproduced from the repo instead of from this machine's home directory
+- [ ] Script the scoring (`--csv` from item 6 would feed it) rather than
+      keeping it in a throwaway shell script
+- [ ] Both `gemma3` and `phi4-mini` fail on `ffsend.log`: a build that
+      succeeds while printing 62 warnings, including `enum Error is never
+      used`. Detecting "ends in Finished/Build succeeded" would fix the one
+      case every model gets wrong
+- [ ] Re-score on the MacBook once `gemma4:26b`, `gpt-oss:20b` and
+      `qwen3:30b` are available — the ordering above only covers 4B models
