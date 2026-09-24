@@ -12,8 +12,12 @@ Two scripts run the same benchmark:
   time to first token and time to answer
 - `src/basic_chat.py` — waits for the whole response, then prints it
 
-A third puts the models to work: `src/triage.py` reads an error log and
-summarizes what failed. See [Log triage](#log-triage).
+Two more put the models to work:
+
+- `src/triage.py` — reads an error log and summarizes what failed.
+  See [Log triage](#log-triage).
+- `src/rewrite.py` — rewrites text: tighter, or in a different tone.
+  See [Rewriting text](#rewriting-text).
 
 ## Requirements
 
@@ -142,6 +146,51 @@ so check it against the log before trusting it. A log containing chat
 transcripts (an Ollama server log, say) can also pull a small model into
 answering the conversation instead of triaging it; the prompt warns against
 this, but `gemma3:4b` follows that far better than `nemotron-3-nano:4b` does.
+
+## Rewriting text
+
+Reads a file or stdin, rewrites it, prints the result to stdout. The model name
+and word counts go to stderr, so redirecting gives you clean text.
+
+```sh
+uv run src/rewrite.py draft.txt
+uv run src/rewrite.py --tone plain notes.md > clean.md
+git log -1 --format=%B | uv run src/rewrite.py --tone formal
+```
+
+| `--tone` | What it does |
+| --- | --- |
+| `tighten` (default) | Cut padding, hedging and repetition. Keep every fact and the author's voice. |
+| `formal` | Professional and direct, no slang. |
+| `casual` | Friendly and conversational. |
+| `plain` | Short sentences, common words, no jargon. |
+| `fix` | Grammar, spelling and punctuation only — never rephrases. |
+| `gist` | Keep only the point and anything actionable; drop tangents. The one tone allowed to lose content. |
+
+A 123-word proposal email under `tighten`, down to 98 words:
+
+```
+Thank you for sharing your team's goals for the upcoming content program. Based
+on our discussion, we've developed a plan with a clear editorial process,
+consistent delivery, and measurable reporting tied to your priorities. [...]
+Total investment is $12,500, and this proposal remains valid through
+October 15, 2026.
+```
+
+- Code, commands, URLs and quoted text are copied exactly; lists stay lists.
+- The preambles and code fences models add despite instructions are stripped.
+- A reply far longer than the input is rejected rather than printed: `qwen3:4b`
+  answers a 123-word email with 1400 words of deliberation about how it would
+  rewrite it. It then retries with thinking off, and fails cleanly if that
+  gives nothing usable.
+- Input over 8k characters is refused rather than half-rewritten. Split it up.
+
+`gist` is for reading someone else's ramble, not for producing something you
+send: on that same proposal email it returns the ask alone and drops the price,
+the expiry date and the scope. Use `tighten` for real correspondence.
+
+The text is treated as data, not instructions, but a 4B model is not a reliable
+boundary — don't pipe untrusted text through it.
 
 ## Development
 
