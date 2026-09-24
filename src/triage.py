@@ -18,19 +18,26 @@ from typing import Self
 
 import ollama
 
-# First installed model wins, unless --model says otherwise. qwen3:4b sits last:
-# left to think it burns the whole token budget without answering, and with
-# --no-think it narrates its reasoning instead of following the format.
+# First installed model wins, unless --model says otherwise. The 4B ordering
+# comes from 318 scored runs over 106 logs with known answers (67 cargo builds
+# in ~/rust2/logs, 39 command logs in ~/etc; 11 of them genuinely broken):
+#
+#   qwen3:4b        99% (105/106), 5.6s avg — one miss, and the counted
+#                   failures contradicted it, so the warning fired
+#   phi4-mini:3.8b  97% (103/106), 5.8s avg — one true false negative
+#   gemma3:4b       96% (102/106), 6.2s avg — invented "Service failed to
+#                   respond to heartbeat" from a file of RPM package names
+#
+# Ranked before the "Summary:" prefill, qwen3:4b came last: it used to narrate
+# its reasoning instead of answering. That was a prompt problem, not the model.
 MODEL_PREFERENCE = [
     "gemma4:26b",
     "gpt-oss:20b",
     "qwen3:30b",
-    # gemma3 over phi4-mini: it was the steadier of the two on real logs,
-    # including saying "no errors" when there were none.
-    "gemma3:4b",
-    "phi4-mini:3.8b",
-    "nemotron-3-nano:4b",
     "qwen3:4b",
+    "phi4-mini:3.8b",
+    "gemma3:4b",
+    "nemotron-3-nano:4b",
 ]
 
 # Room for a trimmed log (~6k tokens) plus a full-length answer, so a rambling
