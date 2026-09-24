@@ -7,16 +7,15 @@ uv run src/triage.py build.log --note "started after the uv upgrade"
 """
 
 import argparse
-import itertools
 import re
 import sys
-import threading
 import time
 from collections import Counter
 from collections.abc import Iterable
-from typing import Self
 
 import ollama
+
+from common import OLLAMA_ERRORS, Spinner, pick_model, read_input
 
 # First installed model wins, unless --model says otherwise. The 4B ordering
 # comes from 318 scored runs over 106 logs with known answers (67 cargo builds
@@ -113,64 +112,6 @@ Summary: No errors found.
 Cause: n/a
 Evidence: <the most notable line, quoted verbatim>
 Next: n/a"""
-
-# ollama wraps an unreachable server in the builtin ConnectionError.
-OLLAMA_ERRORS = (
-    ollama.ResponseError,
-    ollama.RequestError,
-    ConnectionError,
-)
-
-
-class Spinner:
-    """Animate a status line while a blocking call runs, so it doesn't look hung."""
-
-    FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-
-    def __init__(self, message: str) -> None:
-        self.message = message
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-
-    def __enter__(self) -> Self:
-        # Only animate on a terminal; carriage returns would litter piped output.
-        if sys.stdout.isatty():
-            self._thread = threading.Thread(target=self._spin, daemon=True)
-            self._thread.start()
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        self.stop()
-
-    def stop(self) -> None:
-        """Clear the status line early, e.g. once the first token arrives."""
-        if self._thread:
-            self._stop.set()
-            self._thread.join()
-            self._thread = None
-            sys.stdout.write("\r\033[K")
-            sys.stdout.flush()
-
-    def _spin(self) -> None:
-        start = time.monotonic()
-        for frame in itertools.cycle(self.FRAMES):
-            elapsed = time.monotonic() - start
-            sys.stdout.write(f"\r  {frame} {self.message} ({elapsed:.0f}s)")
-            sys.stdout.flush()
-            if self._stop.wait(0.1):
-                return
-
-
-def read_log(path: str | None) -> str:
-    """Read the log from a file, or from a pipe when no file is given."""
-    if path:
-        try:
-            return open(path, errors="replace").read()
-        except OSError as err:
-            sys.exit(f"triage: {err}")
-    if sys.stdin.isatty():
-        sys.exit("triage: nothing on stdin; pipe a log in or pass a file path")
-    return sys.stdin.buffer.read().decode(errors="replace")
 
 
 def clean(log: str) -> str:
@@ -286,22 +227,6 @@ def top_errors(log: str) -> list[tuple[int, str]]:
         counts[shape] += 1
         examples.setdefault(shape, line.strip())
     return [(n, examples[shape]) for shape, n in counts.most_common(TOP_ERRORS)]
-
-
-def pick_model(client: ollama.Client, requested: str | None) -> str:
-    installed = [m.model for m in client.list().models]
-    if requested:
-        if requested not in installed:
-            sys.exit(
-                f"triage: {requested} is not installed (have: {', '.join(installed)})"
-            )
-        return requested
-    for model in MODEL_PREFERENCE:
-        if model in installed:
-            return model
-    if not installed:
-        sys.exit("triage: no models installed; pull one with `ollama pull`")
-    return installed[0]
 
 
 # Some models run the four labels together on one line. Swapping the space for
@@ -492,7 +417,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    cleaned = clean(read_log(args.path))
+    cleaned = clean(read_input(args.path, "triage"))
     if not cleaned:
         sys.exit("triage: the log is empty")
     # Count over the whole log, not the trimmed selection sent to the model.
@@ -501,7 +426,7 @@ def main() -> None:
 
     client = ollama.Client()
     try:
-        model = pick_model(client, args.model)
+        model = pick_model(client, args.model, MODEL_PREFERENCE, "triage")
         failure = triage(
             client, model, log, args.note, args.think, args.timeout, frequent
         )
