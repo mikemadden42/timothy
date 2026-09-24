@@ -18,12 +18,15 @@ makes "medium" the wrong label; on the 36 GB MacBook they fit.
 
 ## 2. Move shared code into one module
 
-Now duplicated across three scripts: `Spinner`, `OLLAMA_ERRORS`, and in the two
-benchmarks also `SIZES`, the constants, `unload_all`, `warmup`, `ask_prompt`,
-and `parse_args`. They have already drifted twice (the token limit and the
-`qwen3:4b` entry), and `triage.py` carries a third copy of `Spinner`.
+`src/common.py` now holds `Spinner`, `OLLAMA_ERRORS`, `read_input` and
+`pick_model`; `triage.py` and `rewrite.py` use it. The two benchmarks still
+carry their own copies, plus `SIZES`, the constants, `unload_all`, `warmup`,
+`ask_prompt` and `parse_args`, which have already drifted twice (the token
+limit and the `qwen3:4b` entry).
 
-- [ ] Create a shared module (e.g. `src/bench.py`)
+- [x] Create a shared module (`src/common.py`)
+- [ ] Move the benchmarks onto it too, and share what only they use
+      (`SIZES`, `unload_all`, `warmup`, `ask_prompt`)
 - [ ] Leave each script with only its own `run()` and results table
 
 ## 3. Run each model several times
@@ -89,3 +92,24 @@ answers, scored by whether the reply claims a failure:
       case every model gets wrong
 - [ ] Re-score on the MacBook once `gemma4:26b`, `gpt-oss:20b` and
       `qwen3:30b` are available — the ordering above only covers 4B models
+
+## 9. Rewrite follow-ups
+
+`src/rewrite.py` works (see the README), but its model ordering rests on three
+drafts, not a corpus — and the ordering is the *opposite* of triage's:
+
+| model | on two emails and two rambles |
+| --- | --- |
+| `gemma3:4b` | cut hardest while keeping the facts and voice; dropped the closing line that carried the point of a ramble |
+| `nemotron-3-nano:4b` | close behind, best on the rambles; garbled one sentence's meaning |
+| `phi4-mini:3.8b` | barely tightens (122 words for 123), then over-cuts elsewhere |
+| `qwen3:4b` | answers with ~1400 words of deliberation instead of a rewrite; ranks first for triage |
+
+- [ ] Build a scored set the way triage has one: a handful of drafts with
+      known facts, scored on whether every fact survives and the word count
+      actually drops
+- [ ] Try the prefill trick that fixed `qwen3:4b` for triage — there is no
+      obvious anchor for arbitrary prose, but an empty assistant turn or a
+      first-word prefix might work
+- [ ] `phi4-mini` ignores `gist` almost entirely (70 words out of 111 where
+      others gave 3-9); worth checking whether a stronger instruction helps
